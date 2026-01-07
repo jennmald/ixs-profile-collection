@@ -10,6 +10,7 @@ from bluesky.callbacks.mpl_plotting import LiveGrid
 from bluesky.suspenders import SuspendFloor
 from ophyd import EpicsSignal
 from tabulate import tabulate
+import matplotlib.pyplot as plt
 
 #from utils.sixcircle_1p53.sixcircle import *
 
