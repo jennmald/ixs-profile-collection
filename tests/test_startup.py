@@ -29,12 +29,19 @@ def mock_all_ophyd_devices():
     
     def mock_subscribe(self, *args, **kwargs):
         return 0
+    
+    # Mock connected property to always return True
+    @property
+    def mock_connected(self):
+        return True
 
     # Save originals
     originals = {
         'Device.wait_for_connection': ophyd.Device.wait_for_connection,
+        'Device.connected': getattr(type(ophyd.Device), 'connected', None),
         'EpicsSignal.wait_for_connection': ophyd.signal.EpicsSignal.wait_for_connection,
         'EpicsSignalBase.wait_for_connection': ophyd.signal.EpicsSignalBase.wait_for_connection,
+        'EpicsSignalBase.connected': getattr(type(ophyd.signal.EpicsSignalBase), 'connected', None),
         'EpicsSignalBase.get': ophyd.signal.EpicsSignalBase.get,
         'EpicsSignalBase.put': ophyd.signal.EpicsSignalBase.put,
         'EpicsSignalBase.subscribe': ophyd.signal.EpicsSignalBase.subscribe,
@@ -44,8 +51,10 @@ def mock_all_ophyd_devices():
 
     # Apply mocks
     ophyd.Device.wait_for_connection = noop
+    ophyd.Device.connected = mock_connected
     ophyd.signal.EpicsSignal.wait_for_connection = noop
     ophyd.signal.EpicsSignalBase.wait_for_connection = noop
+    ophyd.signal.EpicsSignalBase.connected = mock_connected
     ophyd.signal.EpicsSignalBase.get = mock_get
     ophyd.signal.EpicsSignalBase.put = noop
     ophyd.signal.EpicsSignalBase.subscribe = mock_subscribe
@@ -56,8 +65,12 @@ def mock_all_ophyd_devices():
     
     # Restore originals
     ophyd.Device.wait_for_connection = originals['Device.wait_for_connection']
+    if originals['Device.connected'] is not None:
+        type(ophyd.Device).connected = originals['Device.connected']
     ophyd.signal.EpicsSignal.wait_for_connection = originals['EpicsSignal.wait_for_connection']
     ophyd.signal.EpicsSignalBase.wait_for_connection = originals['EpicsSignalBase.wait_for_connection']
+    if originals['EpicsSignalBase.connected'] is not None:
+        type(ophyd.signal.EpicsSignalBase).connected = originals['EpicsSignalBase.connected']
     ophyd.signal.EpicsSignalBase.get = originals['EpicsSignalBase.get']
     ophyd.signal.EpicsSignalBase.put = originals['EpicsSignalBase.put']
     ophyd.signal.EpicsSignalBase.subscribe = originals['EpicsSignalBase.subscribe']
@@ -104,13 +117,78 @@ from unittest.mock import patch, mock_open, MagicMock
 from pathlib import Path
 
 @pytest.fixture
-def skip_config_load():
-    """Skip configuration file loading in tests"""
-    with patch('os.path.isfile', return_value=False):
+def mock_sixcircle_config():
+    """Mock configuration file loading for SixCircle"""
+    mock_config_content = """# Configuration file
+GLOBAL g_sample TestSample
+GLOBAL g_haz 0.0
+GLOBAL g_kaz 0.0
+GLOBAL g_laz 1.0
+GLOBAL g_aa 5.0
+GLOBAL g_bb 5.0
+GLOBAL g_cc 5.0
+GLOBAL g_al 90.0
+GLOBAL g_be 90.0
+GLOBAL g_ga 90.0
+GLOBAL g_h0 1.0
+GLOBAL g_k0 0.0
+GLOBAL g_l0 0.0
+GLOBAL g_u00 0.0
+GLOBAL g_u01 0.0
+GLOBAL g_u02 0.0
+GLOBAL g_u03 0.0
+GLOBAL g_u04 0.0
+GLOBAL g_u05 0.0
+GLOBAL g_h1 0.0
+GLOBAL g_k1 1.0
+GLOBAL g_l1 0.0
+GLOBAL g_u10 0.0
+GLOBAL g_u11 0.0
+GLOBAL g_u12 0.0
+GLOBAL g_u13 0.0
+GLOBAL g_u14 0.0
+GLOBAL g_u15 0.0
+GLOBAL g_lambda0 1.5418
+GLOBAL g_lambda1 1.5418
+GLOBAL L_TTH -180.0
+GLOBAL U_TTH 180.0
+GLOBAL L_TH -180.0
+GLOBAL U_TH 180.0
+GLOBAL L_CHI -180.0
+GLOBAL U_CHI 180.0
+GLOBAL L_PHI -180.0
+GLOBAL U_PHI 180.0
+GLOBAL L_MU -180.0
+GLOBAL U_MU 180.0
+GLOBAL L_GAM -180.0
+GLOBAL U_GAM 180.0
+GLOBAL L_ALPHA -180.0
+GLOBAL U_ALPHA 180.0
+GLOBAL L_BETA -180.0
+GLOBAL U_BETA 180.0
+"""
+    
+    original_open = open
+    
+    def mock_open_func(filepath, *args, **kwargs):
+        # If it's a sixcircle config file, return mock content
+        if isinstance(filepath, str) and (
+            'sixcircle' in filepath or 
+            'ini.conf' in filepath or
+            'dia_test.conf' in filepath or
+            filepath.startswith('/IXS2/') or
+            filepath.startswith('/nsls2/')
+        ):
+            from io import StringIO
+            return StringIO(mock_config_content)
+        # Otherwise use the real open
+        return original_open(filepath, *args, **kwargs)
+    
+    with patch('builtins.open', side_effect=mock_open_func):
         yield
 
 @pytest.fixture
-def startup_shell(mock_all_ophyd_devices, mock_services, mock_nslsii,startup_dir):
+def startup_shell(mock_all_ophyd_devices, mock_services, mock_nslsii, mock_sixcircle_config, startup_dir):
     from IPython.core.interactiveshell import InteractiveShell
     from IPython.core.profiledir import ProfileDir
 
